@@ -51,10 +51,12 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+
 #include "src/core/lib/address_utils/sockaddr_utils.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/debug/trace.h"
 #include "src/core/lib/event_engine/extensions/supports_fd.h"
+#include "src/core/lib/event_engine/shim.h"
 #include "src/core/lib/event_engine/query_extensions.h"
 #include "src/core/lib/experiments/experiments.h"
 #include "src/core/lib/iomgr/buffer_list.h"
@@ -1937,6 +1939,18 @@ grpc_endpoint* grpc_tcp_create(
 grpc_endpoint* grpc_tcp_create(grpc_fd* em_fd,
                                const grpc_core::PosixTcpOptions& options,
                                absl::string_view peer_string) {
+  if (grpc_event_engine::experimental::UsePollsetAlternative()) {
+    if (options.event_engine == nullptr) {
+      grpc_core::Crash("Event engine is required for pollset alternative.");
+    }
+    auto* event_engine_supports_fd =
+        grpc_event_engine::experimental::QueryExtension<
+            grpc_event_engine::experimental::EventEngineSupportsFdExtension>(
+            options.event_engine.get());
+    if (event_engine_supports_fd == nullptr) {
+      grpc_core::Crash("Event engine does not support fds.");
+    }
+  }
   grpc_tcp* tcp = new grpc_tcp(options);
   tcp->base.vtable = &vtable;
   tcp->peer_string = std::string(peer_string);
